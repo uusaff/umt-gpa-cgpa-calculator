@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Plus, Trash2, RotateCcw, Download, Calculator, BookOpen, GraduationCap, CheckCircle2, AlertCircle, PartyPopper } from 'lucide-react';
-
 // UMT Grading Scale
 const GRADE_SCALE = {
   'A': 4.00, 'A-': 3.70, 'B+': 3.30, 'B': 3.00, 'B-': 2.70,
@@ -163,7 +162,20 @@ export default function UMTCalculator() {
       )}
 
       <div className="max-w-5xl mx-auto relative z-10">
-        <div className="text-center mb-10 print:text-black print:mb-6">
+<div className="relative text-center mb-10 print:text-black print:mb-6 flex flex-col items-center">
+          {/* GitHub Profile Link (Using Raw SVG) */}
+          <a 
+            href="https://github.com/uusaff" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="absolute right-0 top-0 flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white px-3 py-2 rounded-xl transition-all shadow-lg hover:shadow-white/5 print:hidden"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 22v-4a4.8 4.8 0 0 0-1-3.02c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A4.8 4.8 0 0 0 8 18v4"></path>
+            </svg>
+            <span className="hidden sm:inline font-medium text-sm">@uusaff</span>
+          </a>
+
           <h1 className="text-4xl md:text-5xl font-extrabold mb-3 bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-400 print:text-black">
             UMT Academic Calculator
           </h1>
