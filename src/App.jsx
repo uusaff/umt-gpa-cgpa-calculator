@@ -392,7 +392,7 @@ export default function App() {
                   rel="noopener noreferrer"
                   className="w-full py-3.5 rounded-[12px] bg-indigo-500/5 hover:bg-indigo-500/20 text-indigo-300 hover:text-white font-bold text-xs uppercase tracking-widest transition-all border border-indigo-500/30 hover:border-indigo-400 hover:shadow-[0_0_20px_rgba(99,102,241,0.4)] flex items-center justify-center gap-2"
                 >
-                  Load Tracker <ExternalLink size={14} />
+                  Load Exams Tracker ? <ExternalLink size={14} />
                 </a>
               </div>
             </div>
@@ -418,7 +418,7 @@ export default function App() {
                   rel="noopener noreferrer"
                   className="w-full py-3.5 rounded-[12px] bg-pink-500/5 hover:bg-pink-500/20 text-pink-300 hover:text-white font-bold text-xs uppercase tracking-widest transition-all border border-pink-500/30 hover:border-pink-400 hover:shadow-[0_0_20px_rgba(236,72,153,0.4)] flex items-center justify-center gap-2"
                 >
-                  Load Habits <ExternalLink size={14} />
+                  Load Habits Tracker ? <ExternalLink size={14} />
                 </a>
               </div>
             </div>
