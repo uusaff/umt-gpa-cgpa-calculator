@@ -1,432 +1,622 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Plus, Trash2, RotateCcw, Download, BookOpen, GraduationCap, CheckCircle2, AlertCircle, Award, Calendar, ExternalLink, Github, Activity } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import {
+  Plus, Trash2, RotateCcw, Download,
+  BookOpen, GraduationCap, Award, Calendar,
+  Github, Activity, ArrowRight, CheckCircle2,
+  AlertCircle, ChevronDown, X, TrendingUp
+} from 'lucide-react';
 
+/* ─── Grade Scale ─────────────────────────────────────────── */
 const GRADE_SCALE = {
   'A': 4.00, 'A-': 3.70, 'B+': 3.30, 'B': 3.00, 'B-': 2.70,
   'C+': 2.30, 'C': 2.00, 'C-': 1.70, 'D+': 1.30, 'D': 1.00, 'F': 0.00
 };
 
-const getInitialSubject = () => [{ id: Date.now(), name: '', credits: 3, grade: 'A' }];
+const getInitialSubject  = () => [{ id: Date.now(), name: '', credits: 3, grade: 'A' }];
 const getInitialSemester = () => [{ id: Date.now(), name: 'Semester 1', gpa: '', credits: 15 }];
 
-export default function App() {
-  const [activeTab, setActiveTab] = useState('gpa');
-  const [showResult, setShowResult] = useState(false);
-  
-  const [subjects, setSubjects] = useState(() => {
-    const saved = localStorage.getItem('umt_gpa_subjects');
-    const parsed = saved ? JSON.parse(saved) : null;
-    return (parsed && parsed.length > 0) ? parsed : getInitialSubject();
-  });
-  
-  const [semesters, setSemesters] = useState(() => {
-    const saved = localStorage.getItem('umt_cgpa_semesters');
-    const parsed = saved ? JSON.parse(saved) : null;
-    return (parsed && parsed.length > 0) ? parsed : getInitialSemester();
-  });
-  
-  const [toast, setToast] = useState(null);
+/* ─── Feedback ────────────────────────────────────────────── */
+function getFeedback(score) {
+  if (score < 2.0) return { text: 'Requires Attention', cls: 'status-low',   bar: 20  };
+  if (score < 3.0) return { text: 'Steady Progress',    cls: 'status-mid',   bar: 50  };
+  if (score < 3.5) return { text: 'Commendable',        cls: 'status-good',  bar: 70  };
+  if (score < 3.9) return { text: 'Excellent Standing', cls: 'status-great', bar: 88  };
+  return              { text: 'Exceptional Merit',   cls: 'status-excel', bar: 100 };
+}
+
+/* ─── Toast ───────────────────────────────────────────────── */
+function Toast({ toast }) {
+  if (!toast) return null;
+  return (
+    <div className={`toast ${toast.type === 'error' ? 'toast--error' : ''}`}>
+      {toast.type === 'error'
+        ? <AlertCircle size={14} className="toast-icon-err" />
+        : <CheckCircle2 size={14} className="toast-icon-ok" />}
+      <span>{toast.message}</span>
+    </div>
+  );
+}
+
+/* ─── Background Canvas ───────────────────────────────────── */
+function BackgroundCanvas() {
+  return (
+    <div className="bg-canvas" aria-hidden="true">
+      <div className="bg-topo" />
+      <div className="bg-dots" />
+    </div>
+  );
+}
+
+/* ─── Mobile Entry Card (replaces table rows on mobile) ─────── */
+function EntryCard({ item, index, isGpa, onUpdate, onRemove, canRemove }) {
+  return (
+    <div className="entry-card">
+      <div className="entry-card-header">
+        <span className="entry-index">{String(index + 1).padStart(2, '0')}</span>
+        {canRemove && (
+          <button
+            className="entry-delete-btn"
+            onClick={() => onRemove(item.id)}
+            aria-label="Remove entry"
+          >
+            <X size={13} />
+          </button>
+        )}
+      </div>
+
+      <div className="entry-fields">
+        {/* Name */}
+        <div className="entry-field entry-field--name">
+          <label className="entry-label">
+            {isGpa ? 'Subject' : 'Term'}
+          </label>
+          <input
+            type="text"
+            className="field-input"
+            value={item.name}
+            placeholder={isGpa ? 'e.g. Data Structures' : 'e.g. Fall 2024'}
+            onChange={e => onUpdate(item.id, 'name', e.target.value)}
+          />
+        </div>
+
+        <div className="entry-row-bottom">
+          {/* Grade / GPA */}
+          <div className="entry-field entry-field--grade">
+            <label className="entry-label">{isGpa ? 'Grade' : 'GPA'}</label>
+            {isGpa ? (
+              <div className="field-select-wrapper">
+                <select
+                  className="field-select"
+                  value={item.grade}
+                  onChange={e => onUpdate(item.id, 'grade', e.target.value)}
+                >
+                  {Object.keys(GRADE_SCALE).map(g => (
+                    <option key={g} value={g}>{g} — {GRADE_SCALE[g].toFixed(2)}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <input
+                type="number"
+                className="field-input"
+                step="0.01" min="0" max="4"
+                placeholder="0.00"
+                value={item.gpa}
+                onChange={e => onUpdate(item.id, 'gpa', e.target.value)}
+              />
+            )}
+          </div>
+
+          {/* Credits */}
+          <div className="entry-field entry-field--credits">
+            <label className="entry-label">Credits</label>
+            <div className="credit-stepper">
+              <button
+                className="stepper-btn"
+                onClick={() => {
+                  const v = Math.max(1, Number(item.credits) - 1);
+                  onUpdate(item.id, 'credits', v);
+                }}
+                aria-label="Decrease credits"
+              >−</button>
+              <span className="stepper-val">{item.credits}</span>
+              <button
+                className="stepper-btn"
+                onClick={() => {
+                  const v = Math.min(6, Number(item.credits) + 1);
+                  onUpdate(item.id, 'credits', v);
+                }}
+                aria-label="Increase credits"
+              >+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Result Bottom Sheet ─────────────────────────────────── */
+function ResultSheet({ show, onClose, score, label, feedback, totalCredits, scalePercent }) {
+  const sheetRef = useRef(null);
 
   useEffect(() => {
-    localStorage.setItem('umt_gpa_subjects', JSON.stringify(subjects));
-    localStorage.setItem('umt_cgpa_semesters', JSON.stringify(semesters));
-    setShowResult(false);
-  }, [subjects, semesters, activeTab]);
+    if (show && sheetRef.current) {
+      sheetRef.current.scrollTop = 0;
+    }
+  }, [show]);
+
+  if (!show) return null;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="sheet-backdrop" onClick={onClose} aria-hidden="true" />
+      {/* Sheet */}
+      <div className="result-sheet" ref={sheetRef} role="dialog" aria-modal="true" aria-label="GPA Result">
+        <div className="sheet-handle" />
+
+        <div className="sheet-body">
+          {/* Score */}
+          <p className="sheet-label">{label}</p>
+          <div className="sheet-score">{score.toFixed(2)}</div>
+          <p className="sheet-scale">out of 4.00</p>
+
+          {/* Progress bar */}
+          <div className="sheet-bar-track">
+            <div
+              className={`sheet-bar-fill ${feedback.cls}`}
+              style={{ width: `${feedback.bar}%` }}
+            />
+          </div>
+
+          {/* Status badge */}
+          <div className={`sheet-status ${feedback.cls}`}>{feedback.text}</div>
+
+          {/* Stats row */}
+          <div className="sheet-stats">
+            <div className="sheet-stat">
+              <span className="sheet-stat-label">Total Credits</span>
+              <span className="sheet-stat-value">{totalCredits}</span>
+            </div>
+            <div className="sheet-stat-divider" />
+            <div className="sheet-stat">
+              <span className="sheet-stat-label">Scale %</span>
+              <span className="sheet-stat-value">{scalePercent}%</span>
+            </div>
+            <div className="sheet-stat-divider" />
+            <div className="sheet-stat">
+              <span className="sheet-stat-label">Grade</span>
+              <span className="sheet-stat-value" style={{ color: 'var(--accent)' }}>
+                {score >= 3.9 ? 'A+' : score >= 3.5 ? 'A' : score >= 3.0 ? 'B' : score >= 2.0 ? 'C' : 'D'}
+              </span>
+            </div>
+          </div>
+
+          {/* Close */}
+          <button className="sheet-close-btn" onClick={onClose}>
+            <X size={14} /> Close
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════
+   APP
+═══════════════════════════════════════════════════════════ */
+export default function App() {
+  const [activeTab, setActiveTab]   = useState('gpa');
+  const [showResult, setShowResult] = useState(false);
+  const [toast, setToast]           = useState(null);
+
+  const [subjects, setSubjects] = useState(() => {
+    const s = localStorage.getItem('umt_gpa_subjects');
+    const p = s ? JSON.parse(s) : null;
+    return (p && p.length > 0) ? p : getInitialSubject();
+  });
+
+  const [semesters, setSemesters] = useState(() => {
+    const s = localStorage.getItem('umt_cgpa_semesters');
+    const p = s ? JSON.parse(s) : null;
+    return (p && p.length > 0) ? p : getInitialSemester();
+  });
+
+  useEffect(() => { localStorage.setItem('umt_gpa_subjects',   JSON.stringify(subjects));  }, [subjects]);
+  useEffect(() => { localStorage.setItem('umt_cgpa_semesters', JSON.stringify(semesters)); }, [semesters]);
+  useEffect(() => { setShowResult(false); }, [activeTab]);
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  const getFeedbackMessage = (score) => {
-    if (score < 2.0) return { text: "Requires Attention", color: "text-pink-400 drop-shadow-[0_0_8px_rgba(244,114,182,0.8)]" };
-    if (score < 3.0) return { text: "Steady Progress", color: "text-blue-400 drop-shadow-[0_0_8px_rgba(96,165,250,0.8)]" };
-    if (score < 3.5) return { text: "Commendable", color: "text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]" };
-    if (score < 3.9) return { text: "Excellent Standing", color: "text-purple-400 drop-shadow-[0_0_8px_rgba(192,132,252,0.8)]" };
-    return { text: "Exceptional Merit", color: "text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-purple-400 to-pink-400 font-bold italic tracking-wide drop-shadow-[0_0_10px_rgba(217,70,239,0.5)]" };
-  };
-
-  const addSubject = () => {
-    if (subjects.length >= 10) return showToast('Maximum 10 subjects allowed', 'error');
+  /* ── GPA Actions ──────────────────────────────────────── */
+  const addSubject    = () => {
+    if (subjects.length >= 10) return showToast('Max 10 subjects', 'error');
     setSubjects([...subjects, { id: Date.now(), name: '', credits: 3, grade: 'A' }]);
   };
-
-  const updateSubject = (id, field, value) => {
-    setSubjects(subjects.map(sub => sub.id === id ? { ...sub, [field]: value } : sub));
-  };
-
+  const updateSubject = (id, f, v) => setSubjects(subjects.map(s => s.id === id ? { ...s, [f]: v } : s));
   const removeSubject = (id) => {
-    if (subjects.length <= 1) return showToast('At least 1 subject is required', 'error');
-    setSubjects(subjects.filter(sub => sub.id !== id));
+    if (subjects.length <= 1) return showToast('At least 1 subject required', 'error');
+    setSubjects(subjects.filter(s => s.id !== id));
   };
 
-  const gpaStats = useMemo(() => {
-    let totalCredits = 0;
-    let totalQualityPoints = 0;
-    subjects.forEach(sub => {
-      const credits = Number(sub.credits) || 0;
-      const points = (GRADE_SCALE[sub.grade] || 0) * credits;
-      totalCredits += credits;
-      totalQualityPoints += points;
-    });
-    return { totalCredits, totalQualityPoints, gpa: totalCredits > 0 ? (totalQualityPoints / totalCredits) : 0 };
-  }, [subjects]);
-
-  const addSemester = () => {
-    if (semesters.length >= 10) return showToast('Maximum 10 semesters allowed', 'error');
+  /* ── CGPA Actions ─────────────────────────────────────── */
+  const addSemester    = () => {
+    if (semesters.length >= 10) return showToast('Max 10 semesters', 'error');
     setSemesters([...semesters, { id: Date.now(), name: `Semester ${semesters.length + 1}`, gpa: '', credits: 15 }]);
   };
-
-  const updateSemester = (id, field, value) => {
-    setSemesters(semesters.map(sem => sem.id === id ? { ...sem, [field]: value } : sem));
-  };
-
+  const updateSemester = (id, f, v) => setSemesters(semesters.map(s => s.id === id ? { ...s, [f]: v } : s));
   const removeSemester = (id) => {
-    if (semesters.length <= 1) return showToast('At least 1 semester is required', 'error');
-    setSemesters(semesters.filter(sem => sem.id !== id));
+    if (semesters.length <= 1) return showToast('At least 1 semester required', 'error');
+    setSemesters(semesters.filter(s => s.id !== id));
   };
+
+  /* ── Computed ─────────────────────────────────────────── */
+  const gpaStats = useMemo(() => {
+    let tc = 0, tq = 0;
+    subjects.forEach(s => { const c = Number(s.credits)||0; tc += c; tq += (GRADE_SCALE[s.grade]||0)*c; });
+    return { totalCredits: tc, gpa: tc > 0 ? tq/tc : 0 };
+  }, [subjects]);
 
   const cgpaStats = useMemo(() => {
-    let totalCredits = 0;
-    let totalQualityPoints = 0;
-    semesters.forEach(sem => {
-      const credits = Number(sem.credits) || 0;
-      const gpa = Number(sem.gpa) || 0;
-      totalCredits += credits;
-      totalQualityPoints += (gpa * credits);
-    });
-    return { totalCredits, cgpa: totalCredits > 0 ? (totalQualityPoints / totalCredits) : 0 };
+    let tc = 0, tq = 0;
+    semesters.forEach(s => { const c = Number(s.credits)||0; const g = Number(s.gpa)||0; tc += c; tq += g*c; });
+    return { totalCredits: tc, cgpa: tc > 0 ? tq/tc : 0 };
   }, [semesters]);
 
+  const isGpa        = activeTab === 'gpa';
+  const currentScore = isGpa ? gpaStats.gpa : cgpaStats.cgpa;
+  const totalCredits = isGpa ? gpaStats.totalCredits : cgpaStats.totalCredits;
+  const scalePercent = ((currentScore / 4) * 100).toFixed(1);
+  const feedback     = getFeedback(currentScore);
+  const items        = isGpa ? subjects : semesters;
+  const count        = items.length;
+
   const resetData = () => {
-    if (activeTab === 'gpa') setSubjects(getInitialSubject());
+    if (isGpa) setSubjects(getInitialSubject());
     else setSemesters(getInitialSemester());
     setShowResult(false);
     showToast('Registry cleared');
   };
 
-  const currentScore = activeTab === 'gpa' ? gpaStats.gpa : cgpaStats.cgpa;
-  const feedback = getFeedbackMessage(currentScore);
-
-  // Futuristic Glassmorphism Style
-  const glassBoxStyle = "bg-slate-900/40 backdrop-blur-2xl rounded-[18px] border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.6)] transition-all duration-500 ease-out hover:-translate-y-1 hover:shadow-[0_0_40px_rgba(99,102,241,0.2)] hover:border-indigo-500/30 relative overflow-hidden";
-
+  /* ════════════════════════════════════════════════════════
+     RENDER
+  ════════════════════════════════════════════════════════ */
   return (
-    <div className="min-h-screen font-sans p-4 md:p-8 selection:bg-cyan-500/30 selection:text-cyan-100 relative overflow-hidden">
-      
-      {/* 1. Blurred Background Image */}
-      <div 
-        className="absolute inset-0 z-0 bg-cover bg-center bg-fixed blur-[10px] scale-110"
-        style={{ backgroundImage: "url('/3550405.jpg')" }}
-      ></div>
-      
-      {/* 2. Dark Overlay to ensure glass UI pops and remains readable */}
-      <div className="absolute inset-0 z-0 bg-[#060913]/75"></div>
+    <>
+      <BackgroundCanvas />
+      <Toast toast={toast} />
 
-      {/* 3. Original Ambient Glows (Moved to z-0 so they blend nicely) */}
-      <div className="absolute z-0 top-[-15%] left-[-10%] w-[50%] h-[50%] rounded-full bg-purple-700/30 blur-[140px] pointer-events-none"></div>
-      <div className="absolute z-0 bottom-[-15%] right-[-10%] w-[50%] h-[50%] rounded-full bg-cyan-600/30 blur-[140px] pointer-events-none"></div>
-      <div className="absolute z-0 top-[30%] left-[40%] w-[30%] h-[30%] rounded-full bg-blue-600/20 blur-[120px] pointer-events-none"></div>
+      {/* Result Sheet (mobile) */}
+      <ResultSheet
+        show={showResult}
+        onClose={() => setShowResult(false)}
+        score={currentScore}
+        label={isGpa ? 'Semester GPA' : 'Cumulative GPA'}
+        feedback={feedback}
+        totalCredits={totalCredits}
+        scalePercent={scalePercent}
+      />
 
-      <div className="max-w-[1200px] mx-auto relative z-10">
-        
-        <a 
-          href="https://github.com/uusaff" 
-          target="_blank" 
-          rel="noopener noreferrer" 
-          className="absolute top-0 right-0 mt-2 mr-2 md:mt-0 md:mr-0 flex items-center gap-2 text-slate-400 hover:text-cyan-400 transition-all duration-300 hover:scale-105 hover:drop-shadow-[0_0_15px_rgba(34,211,238,0.8)] z-50 group"
-        >
-          <span className="font-semibold text-sm hidden sm:block tracking-widest uppercase group-hover:text-cyan-400 transition-colors">uusaff</span>
-          <Github size={22} className="group-hover:text-cyan-400 transition-colors" />
-        </a>
-
-        {/* Toast Notification */}
-        {toast && (
-          <div className="fixed top-6 right-6 z-50 flex items-center gap-3 bg-slate-800/80 backdrop-blur-xl text-white px-5 py-3 rounded-[12px] shadow-[0_0_30px_rgba(0,0,0,0.5)] border border-white/10 animate-in slide-in-from-top-4 fade-in duration-300 print:hidden">
-            {toast.type === 'error' ? (
-              <AlertCircle size={18} className="text-pink-500 drop-shadow-[0_0_8px_rgba(236,72,153,0.8)]" />
-            ) : (
-              <CheckCircle2 size={18} className="text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-            )}
-            <span className="font-medium tracking-wide text-sm">{toast.message}</span>
-          </div>
-        )}
-
-        {/* Header */}
-        <div className="text-center mb-12 flex flex-col items-center pt-8">
-          <h1 className="text-4xl md:text-6xl font-extrabold tracking-tighter mb-4 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500 drop-shadow-[0_0_25px_rgba(56,189,248,0.3)]">
-            UMT GPA / CGPA Calculator
-          </h1>
-          <div className="h-px w-32 bg-gradient-to-r from-transparent via-cyan-500/50 to-transparent mb-5"></div>
-          <p className="text-cyan-400/80 uppercase tracking-[0.3em] text-xs font-bold drop-shadow-[0_0_10px_rgba(34,211,238,0.4)]">
-            Official (AI-Assisted) Grading System
-          </p>
-        </div>
-
-        <div className="grid lg:grid-cols-3 gap-8 items-start">
-          
-          <div className={`lg:col-span-2 ${glassBoxStyle}`}>
-            
-            {/* Tabs */}
-            <div className="flex border-b border-white/5 relative z-10 print:hidden bg-slate-900/40">
-              <button
-                onClick={() => setActiveTab('gpa')}
-                className={`flex-1 py-5 flex items-center justify-center gap-2 text-sm uppercase tracking-widest font-bold transition-all duration-300 ${
-                  activeTab === 'gpa' 
-                    ? 'text-cyan-400 border-b-2 border-cyan-400 bg-slate-800/40 shadow-[inset_0_-2px_15px_rgba(34,211,238,0.15)]' 
-                    : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/20'
-                }`}
-              >
-                <BookOpen size={16} className={activeTab === 'gpa' ? "drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]" : ""} /> Semester GPA
-              </button>
-              <button
-                onClick={() => setActiveTab('cgpa')}
-                className={`flex-1 py-5 flex items-center justify-center gap-2 text-sm uppercase tracking-widest font-bold transition-all duration-300 ${
-                  activeTab === 'cgpa' 
-                    ? 'text-purple-400 border-b-2 border-purple-400 bg-slate-800/40 shadow-[inset_0_-2px_15px_rgba(192,132,252,0.15)]' 
-                    : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/20'
-                }`}
-              >
-                <GraduationCap size={16} className={activeTab === 'cgpa' ? "drop-shadow-[0_0_8px_rgba(192,132,252,0.8)]" : ""} /> Cumulative GPA
-              </button>
+      {/* ══ DESKTOP LAYOUT (≥1024px) ═══════════════════════ */}
+      <div className="desktop-wrapper">
+        <div className="page-wrapper">
+          {/* Header */}
+          <header className="site-header anim-fade-up">
+            <div className="header-brand">
+              <h1 className="header-title">UMT GPA / CGPA Calculator</h1>
+              <p className="header-subtitle">Official (AI-Assisted) Grading System</p>
             </div>
+            <a href="https://github.com/uusaff" target="_blank" rel="noopener noreferrer"
+               className="header-user" aria-label="GitHub profile – UUSAFF">
+              <span>UUSAFF</span>
+              <Github size={15} />
+            </a>
+          </header>
 
-            <div className="p-6 md:p-8 relative z-10">
-              
-              <div className="flex flex-wrap justify-between items-center mb-8 gap-4 print:hidden">
-                <button
-                  onClick={activeTab === 'gpa' ? addSubject : addSemester}
-                  className="group flex items-center gap-2 bg-slate-800/50 hover:bg-slate-700/60 text-slate-300 hover:text-white px-5 py-2.5 rounded-[12px] text-sm font-semibold transition-all border border-white/10 hover:border-cyan-500/50 hover:shadow-[0_0_20px_rgba(34,211,238,0.2)] backdrop-blur-md"
-                >
-                  <Plus size={16} className="text-cyan-400 group-hover:scale-110 group-hover:drop-shadow-[0_0_8px_rgba(34,211,238,0.8)] transition-all" /> 
-                  Add {activeTab === 'gpa' ? 'Entry' : 'Term'}
-                  <span className="text-[10px] font-bold text-cyan-300 bg-slate-900/80 px-2 py-0.5 rounded-full ml-2 border border-cyan-500/30">
-                    {activeTab === 'gpa' ? subjects.length : semesters.length}/10
-                  </span>
+          {/* Desktop Grid */}
+          <div className="main-grid">
+            {/* Calculator Card */}
+            <div className="card anim-fade-up anim-delay-1" id="calculator-card">
+              <div className="tabs" role="tablist">
+                <button role="tab" aria-selected={isGpa} id="tab-gpa"
+                  className={`tab-btn ${isGpa ? 'active' : ''}`} onClick={() => setActiveTab('gpa')}>
+                  <BookOpen size={13} /> Semester GPA
                 </button>
-                
-                <div className="flex gap-3">
-                  <button onClick={resetData} className="flex items-center gap-2 bg-transparent hover:bg-pink-500/10 text-slate-400 hover:text-pink-400 px-4 py-2.5 rounded-[12px] text-sm font-semibold transition-all border border-transparent hover:border-pink-500/40 hover:shadow-[0_0_15px_rgba(236,72,153,0.2)]">
-                    <RotateCcw size={16} /> Reset
-                  </button>
-                  <button onClick={() => window.print()} className="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-5 py-2.5 rounded-[12px] text-sm font-semibold transition-all shadow-[0_0_15px_rgba(99,102,241,0.4)] hover:shadow-[0_0_25px_rgba(168,85,247,0.6)] border border-purple-400/30">
-                    <Download size={16} /> Export
-                  </button>
+                <button role="tab" aria-selected={!isGpa} id="tab-cgpa"
+                  className={`tab-btn ${!isGpa ? 'active' : ''}`} onClick={() => setActiveTab('cgpa')}>
+                  <GraduationCap size={13} /> Cumulative GPA
+                </button>
+              </div>
+
+              <div className="card-body">
+                <div className="controls-row">
+                  <div className="controls-left">
+                    <button id="btn-add-entry" className="btn-secondary"
+                      onClick={isGpa ? addSubject : addSemester}>
+                      <Plus size={13} className="btn-icon-accent" />
+                      Add {isGpa ? 'Entry' : 'Term'}
+                    </button>
+                    <span className="count-badge" aria-live="polite">{count}/10</span>
+                  </div>
+                  <div className="controls-right">
+                    <button id="btn-reset" className="btn-ghost" onClick={resetData}>
+                      <RotateCcw size={12} /> Reset
+                    </button>
+                    <button id="btn-export" className="btn-primary" onClick={() => window.print()}>
+                      <Download size={12} /> Export
+                    </button>
+                  </div>
+                </div>
+
+                {/* Desktop table */}
+                <div className="data-table-wrapper">
+                  <table className="data-table" aria-label={isGpa ? 'Subject entries' : 'Semester entries'}>
+                    <thead>
+                      <tr>
+                        <th style={{ width: '46%' }}>{isGpa ? 'Subject Name' : 'Term Designation'}</th>
+                        <th style={{ width: '22%' }}>{isGpa ? 'Grade' : 'GPA'}</th>
+                        <th style={{ width: '22%' }}>Credits</th>
+                        <th style={{ width: '10%' }} className="text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {items.map(item => (
+                        <tr key={item.id}>
+                          <td style={{ paddingRight: '10px' }}>
+                            <input type="text" className="field-input" value={item.name}
+                              placeholder={isGpa ? 'e.g. Data Structures' : 'e.g. Fall 2024'}
+                              onChange={e => isGpa
+                                ? updateSubject(item.id, 'name', e.target.value)
+                                : updateSemester(item.id, 'name', e.target.value)} />
+                          </td>
+                          <td style={{ paddingRight: '10px' }}>
+                            {isGpa ? (
+                              <div className="field-select-wrapper">
+                                <select className="field-select" value={item.grade}
+                                  onChange={e => updateSubject(item.id, 'grade', e.target.value)}>
+                                  {Object.keys(GRADE_SCALE).map(g => <option key={g} value={g}>{g}</option>)}
+                                </select>
+                              </div>
+                            ) : (
+                              <input type="number" className="field-input" step="0.01" min="0" max="4"
+                                placeholder="0.00" value={item.gpa}
+                                onChange={e => updateSemester(item.id, 'gpa', e.target.value)} />
+                            )}
+                          </td>
+                          <td style={{ paddingRight: '10px' }}>
+                            <input type="number" className="field-input" min="1" max="6" value={item.credits}
+                              onChange={e => {
+                                const v = Math.max(1, Number(e.target.value));
+                                isGpa ? updateSubject(item.id, 'credits', v) : updateSemester(item.id, 'credits', v);
+                              }} />
+                          </td>
+                          <td className="text-center">
+                            {count > 1 && (
+                              <button className="btn-delete"
+                                onClick={() => isGpa ? removeSubject(item.id) : removeSemester(item.id)}>
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr>
-                      <th className="pb-4 font-bold text-slate-500 uppercase tracking-widest text-xs border-b border-white/10 w-1/2">
-                        {activeTab === 'gpa' ? 'Subject Name' : 'Term Designation'}
-                      </th>
-                      <th className="pb-4 font-bold text-slate-500 uppercase tracking-widest text-xs border-b border-white/10">
-                        {activeTab === 'gpa' ? 'Grade' : 'GPA'}
-                      </th>
-                      <th className="pb-4 font-bold text-slate-500 uppercase tracking-widest text-xs border-b border-white/10">
-                        Credits
-                      </th>
-                      <th className="pb-4 font-bold text-slate-500 uppercase tracking-widest text-xs border-b border-white/10 text-center print:hidden">
-                        Action
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {(activeTab === 'gpa' ? subjects : semesters).map((item) => (
-                      <tr key={item.id} className="group transition-colors hover:bg-white/[0.02]">
-                        <td className="py-4 pr-3">
-                          <input
-                            type="text"
-                            placeholder={activeTab === 'gpa' ? "Enter subject..." : "e.g. Fall 2023"}
-                            value={item.name}
-                            onChange={(e) => activeTab === 'gpa' 
-                              ? updateSubject(item.id, 'name', e.target.value) 
-                              : updateSemester(item.id, 'name', e.target.value)}
-                            className="w-full bg-slate-900/50 backdrop-blur-sm border border-white/10 rounded-[10px] px-4 py-2.5 text-sm text-white placeholder-slate-600 focus:border-cyan-500/70 focus:ring-1 focus:ring-cyan-500/50 focus:shadow-[0_0_15px_rgba(34,211,238,0.2)] outline-none transition-all print:border-none print:bg-transparent"
-                          />
-                        </td>
-                        <td className="py-4 px-3">
-                          {activeTab === 'gpa' ? (
-                            <select
-                              value={item.grade}
-                              onChange={(e) => updateSubject(item.id, 'grade', e.target.value)}
-                              className="w-full bg-slate-900/50 backdrop-blur-sm border border-white/10 rounded-[10px] px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-500/70 focus:ring-1 focus:ring-cyan-500/50 focus:shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all print:appearance-auto cursor-pointer"
-                            >
-                              {Object.keys(GRADE_SCALE).map(grade => (
-                                <option key={grade} value={grade} className="bg-slate-900">{grade}</option>
-                              ))}
-                            </select>
-                          ) : (
-                            <input
-                              type="number"
-                              step="0.01" min="0" max="4"
-                              placeholder="0.00"
-                              value={item.gpa}
-                              onChange={(e) => updateSemester(item.id, 'gpa', e.target.value)}
-                              className="w-full bg-slate-900/50 backdrop-blur-sm border border-white/10 rounded-[10px] px-3 py-2.5 text-sm text-white placeholder-slate-600 outline-none focus:border-cyan-500/70 focus:ring-1 focus:ring-cyan-500/50 focus:shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all"
-                            />
-                          )}
-                        </td>
-                        <td className="py-4 px-3">
-                          <input
-                            type="number"
-                            min="1" max="6"
-                            value={item.credits}
-                            onChange={(e) => activeTab === 'gpa' 
-                              ? updateSubject(item.id, 'credits', Math.max(1, e.target.value))
-                              : updateSemester(item.id, 'credits', Math.max(1, e.target.value))}
-                            className="w-full bg-slate-900/50 backdrop-blur-sm border border-white/10 rounded-[10px] px-3 py-2.5 text-sm text-white outline-none focus:border-cyan-500/70 focus:ring-1 focus:ring-cyan-500/50 focus:shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all"
-                          />
-                        </td>
-                        <td className="py-4 pl-3 text-center print:hidden">
-                          {((activeTab === 'gpa' ? subjects : semesters).length > 1) && (
-                            <button 
-                              onClick={() => activeTab === 'gpa' ? removeSubject(item.id) : removeSemester(item.id)} 
-                              className="text-slate-600 hover:text-pink-400 transition-all p-2 rounded-[8px] hover:bg-pink-500/10 hover:shadow-[0_0_15px_rgba(236,72,153,0.2)] hover:border hover:border-pink-500/30 border border-transparent"
-                            >
-                              <Trash2 size={18} />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
             </div>
-          </div>
 
-
-          <div className="lg:col-span-1 flex flex-col gap-6">
-            
-
-            <div className={`${glassBoxStyle} p-6 group`}>
-              <div className="absolute inset-2 border border-dashed border-white/10 rounded-[12px] pointer-events-none transition-colors duration-500 group-hover:border-cyan-500/30"></div>
-              
-              <div className="relative z-10 h-full flex flex-col justify-center min-h-[300px]">
+            {/* Right Panel */}
+            <div className="right-panel">
+              {/* Card 1 */}
+              <div className="side-card anim-fade-up anim-delay-2" id="calculate-card">
                 {!showResult ? (
-                  <div className="text-center py-4 px-2 print:hidden animate-in fade-in duration-500">
-                    <div className="inline-block p-4 rounded-full bg-cyan-500/10 mb-6 shadow-[0_0_30px_rgba(34,211,238,0.2)]">
-                      <Award size={40} className="text-cyan-400 drop-shadow-[0_0_10px_rgba(34,211,238,0.8)]" strokeWidth={1.5} />
-                    </div>
-                    <h2 className="text-2xl font-extrabold tracking-tight mb-3 text-white">READY ?</h2>
-                    <p className="text-slate-400 text-sm mb-8 leading-relaxed font-medium">
-                      Enter your details. Ready when you are !!
+                  <div className="anim-reveal">
+                    <div className="side-card-icon"><Award size={20} strokeWidth={1.5} /></div>
+                    <h2 className="side-card-title">Ready?</h2>
+                    <p className="side-card-desc">
+                      Fill in your {isGpa ? 'subjects and grades' : 'semester GPAs'} and calculate.
                     </p>
-                    
-                    <button 
-                      onClick={() => {
-                        setShowResult(true);
-                        showToast("System compiled successfully");
-                      }}
-                      className="w-full py-3.5 rounded-[12px] bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-sm uppercase tracking-widest transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)] hover:shadow-[0_0_35px_rgba(34,211,238,0.5)]"
-                    >
-                      Calculate 
+                    <button id="btn-calculate" className="btn-primary btn-primary-full"
+                      onClick={() => { setShowResult(true); showToast('Calculation complete'); }}>
+                      Calculate
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-6 animate-in slide-in-from-bottom-4 fade-in duration-500 py-4">
-                    <div className="text-center border-b border-white/10 pb-6 relative">
-                      <h2 className="text-cyan-400/80 text-xs uppercase tracking-[0.2em] font-bold mb-2">
-                        {activeTab === 'gpa' ? 'Term Status' : 'Cumulative Status'}
-                      </h2>
-                      <div className="text-7xl font-extrabold tracking-tighter text-transparent bg-clip-text bg-gradient-to-br from-white via-cyan-100 to-blue-400 drop-shadow-[0_0_20px_rgba(34,211,238,0.4)]">
-                        {activeTab === 'gpa' ? gpaStats.gpa.toFixed(2) : cgpaStats.cgpa.toFixed(2)}
+                  <div className="anim-reveal">
+                    <p className="result-label">{isGpa ? 'Semester GPA' : 'Cumulative GPA'}</p>
+                    <div className="result-score">{currentScore.toFixed(2)}</div>
+                    <div className={`result-status ${feedback.cls}`}>{feedback.text}</div>
+                    <div className="result-stats">
+                      <div className="result-stat-box">
+                        <div className="result-stat-label">Total Credits</div>
+                        <div className="result-stat-value">{totalCredits}</div>
+                      </div>
+                      <div className="result-stat-box">
+                        <div className="result-stat-label">Scale %</div>
+                        <div className="result-stat-value">{scalePercent}%</div>
                       </div>
                     </div>
-
-                    <div className="bg-slate-900/60 backdrop-blur-md rounded-[12px] p-4 text-center border border-white/5 shadow-[inset_0_0_20px_rgba(0,0,0,0.6)]">
-                      <p className={`text-base font-semibold ${feedback.color}`}>
-                        {feedback.text}
-                      </p>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="text-center p-4 bg-slate-800/30 rounded-[12px] border border-white/5 hover:border-white/10 transition-colors">
-                        <div className="text-slate-500 text-[10px] uppercase tracking-widest font-bold mb-1">Total Credits</div>
-                        <div className="text-2xl font-bold tracking-tight text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">
-                          {activeTab === 'gpa' ? gpaStats.totalCredits : cgpaStats.totalCredits}
-                        </div>
-                      </div>
-                      <div className="text-center p-4 bg-slate-800/30 rounded-[12px] border border-white/5 hover:border-white/10 transition-colors">
-                        <div className="text-slate-500 text-[10px] uppercase tracking-widest font-bold mb-1">Scale %</div>
-                        <div className="text-2xl font-bold tracking-tight text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">
-                          {activeTab === 'gpa' 
-                            ? ((gpaStats.gpa / 4) * 100).toFixed(1) 
-                            : ((cgpaStats.cgpa / 4) * 100).toFixed(1)}%
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <button 
-                      onClick={() => setShowResult(false)}
-                      className="w-full mt-4 py-3 rounded-[12px] bg-transparent hover:bg-white/5 text-slate-400 hover:text-white font-semibold tracking-wide text-sm transition-all border border-white/10 hover:border-white/20 print:hidden"
-                    >
-                      Edit the data ?
+                    <hr className="result-divider" />
+                    <button className="btn-ghost"
+                      style={{ width: '100%', justifyContent: 'center', borderColor: 'var(--border-dim)' }}
+                      onClick={() => setShowResult(false)}>
+                      Edit Data
                     </button>
                   </div>
                 )}
               </div>
-            </div>
 
-            {/* Widget 2: Exam Tracker Link */}
-            <div className={`${glassBoxStyle} p-6 group hover:border-indigo-500/50`}>
-              <div className="absolute inset-2 border border-dashed border-white/5 rounded-[12px] pointer-events-none transition-colors duration-500 group-hover:border-indigo-500/30"></div>
-              
-              <div className="relative z-10 h-full flex flex-col justify-center min-h-[220px] text-center">
-                <div className="mx-auto mb-4 p-3 rounded-full bg-indigo-500/10 group-hover:bg-indigo-500/20 transition-colors duration-500">
-                  <Calendar size={28} className="text-indigo-400 drop-shadow-[0_0_8px_rgba(129,140,248,0.8)] group-hover:scale-110 transition-transform duration-500" strokeWidth={2} />
-                </div>
-                
-                <h3 className="text-xl font-extrabold tracking-tight mb-2 text-white group-hover:text-indigo-100 transition-colors">Exams Approaching?</h3>
-                
-                <p className="text-slate-400 text-xs mb-6 leading-relaxed font-medium px-2">
-                  Maintain operational supremacy. Organize and track midterms and finals with the dedicated AI tracker.
+              {/* Card 2 */}
+              <div className="side-card anim-fade-up anim-delay-3" id="exams-card">
+                <div className="side-card-icon"><Calendar size={20} strokeWidth={1.5} /></div>
+                <h3 className="side-card-title">Exams Approaching?</h3>
+                <p className="side-card-desc">
+                  Organize and track midterms and finals with the dedicated AI-assisted exam tracker.
                 </p>
-                
-                <a 
-                  href="https://usafs-tracker.vercel.app/" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="w-full py-3.5 rounded-[12px] bg-indigo-500/5 hover:bg-indigo-500/20 text-indigo-300 hover:text-white font-bold text-xs uppercase tracking-widest transition-all border border-indigo-500/30 hover:border-indigo-400 hover:shadow-[0_0_20px_rgba(99,102,241,0.4)] flex items-center justify-center gap-2"
-                >
-                  Load Exams Tracker ? <ExternalLink size={14} />
+                <a href="https://usafs-tracker.vercel.app/" target="_blank" rel="noopener noreferrer"
+                   className="side-card-link" id="link-exams-tracker">
+                  <ArrowRight size={12} /> Load Exams Tracker
+                </a>
+              </div>
+
+              {/* Card 3 */}
+              <div className="side-card anim-fade-up anim-delay-4" id="habits-card">
+                <div className="side-card-icon"><Activity size={20} strokeWidth={1.5} /></div>
+                <h3 className="side-card-title">Optimize Behavior</h3>
+                <p className="side-card-desc">
+                  Track core objectives and maintain consistency with the habit-building module.
+                </p>
+                <a href="https://habit-tracker-nine-mu.vercel.app/" target="_blank" rel="noopener noreferrer"
+                   className="side-card-link" id="link-habits-tracker">
+                  <ArrowRight size={12} /> Load Habits Tracker
                 </a>
               </div>
             </div>
-
-            {/* Widget 3: Habit Tracker Link */}
-            <div className={`${glassBoxStyle} p-6 group hover:border-pink-500/50`}>
-              <div className="absolute inset-2 border border-dashed border-white/5 rounded-[12px] pointer-events-none transition-colors duration-500 group-hover:border-pink-500/30"></div>
-              
-              <div className="relative z-10 h-full flex flex-col justify-center min-h-[220px] text-center">
-                <div className="mx-auto mb-4 p-3 rounded-full bg-pink-500/10 group-hover:bg-pink-500/20 transition-colors duration-500">
-                  <Activity size={28} className="text-pink-400 drop-shadow-[0_0_8px_rgba(244,114,182,0.8)] group-hover:scale-110 transition-transform duration-500" strokeWidth={2} />
-                </div>
-                
-                <h3 className="text-xl font-extrabold tracking-tight mb-2 text-white group-hover:text-pink-100 transition-colors">Optimize Behavior</h3>
-                
-                <p className="text-slate-400 text-xs mb-6 leading-relaxed font-medium px-2">
-                  Transform routine algorithms. Track core objectives and maintain consistency with the habit module.
-                </p>
-                
-                <a 
-                  href="https://habit-tracker-nine-mu.vercel.app/" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="w-full py-3.5 rounded-[12px] bg-pink-500/5 hover:bg-pink-500/20 text-pink-300 hover:text-white font-bold text-xs uppercase tracking-widest transition-all border border-pink-500/30 hover:border-pink-400 hover:shadow-[0_0_20px_rgba(236,72,153,0.4)] flex items-center justify-center gap-2"
-                >
-                  Load Habits Tracker ? <ExternalLink size={14} />
-                </a>
-              </div>
-            </div>
-
           </div>
-
         </div>
       </div>
-    </div>
+
+      {/* ══ MOBILE LAYOUT (<1024px) ════════════════════════ */}
+      <div className="mobile-wrapper">
+
+        {/* Fixed top bar */}
+        <header className="mobile-header">
+          <div className="mobile-header-left">
+            <h1 className="mobile-title">UMT Calculator</h1>
+            <p className="mobile-subtitle">GPA / CGPA</p>
+          </div>
+          <a href="https://github.com/uusaff" target="_blank" rel="noopener noreferrer"
+             className="mobile-github-btn" aria-label="GitHub">
+            <Github size={16} />
+            <span>UUSAFF</span>
+          </a>
+        </header>
+
+        {/* Scrollable content area */}
+        <main className="mobile-main">
+
+          {/* Live score ticker */}
+          <div className="mobile-score-ticker">
+            <div className="ticker-inner">
+              <span className="ticker-label">{isGpa ? 'SEMESTER GPA' : 'CUMULATIVE GPA'}</span>
+              <span className="ticker-score">{currentScore.toFixed(2)}</span>
+              <span className={`ticker-status ${feedback.cls}`}>{feedback.text}</span>
+            </div>
+            <div className="ticker-bar-track">
+              <div
+                className={`ticker-bar-fill ${feedback.cls}`}
+                style={{ width: `${feedback.bar}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Entries list */}
+          <section className="mobile-entries-section">
+            <div className="mobile-entries-header">
+              <span className="mobile-entries-count">{count} {isGpa ? 'subject' : 'semester'}{count !== 1 ? 's' : ''}</span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="mobile-icon-btn" onClick={resetData} aria-label="Reset">
+                  <RotateCcw size={15} />
+                </button>
+                <button className="mobile-icon-btn" onClick={() => window.print()} aria-label="Export">
+                  <Download size={15} />
+                </button>
+              </div>
+            </div>
+
+            {/* Entry cards */}
+            <div className="mobile-entries-list">
+              {items.map((item, idx) => (
+                <EntryCard
+                  key={item.id}
+                  item={item}
+                  index={idx}
+                  isGpa={isGpa}
+                  onUpdate={isGpa ? updateSubject : updateSemester}
+                  onRemove={isGpa ? removeSubject : removeSemester}
+                  canRemove={count > 1}
+                />
+              ))}
+            </div>
+
+            {/* Add entry button */}
+            {count < 10 && (
+              <button
+                className="mobile-add-btn"
+                onClick={isGpa ? addSubject : addSemester}
+                aria-label={`Add ${isGpa ? 'subject' : 'semester'}`}
+              >
+                <Plus size={16} />
+                Add {isGpa ? 'Subject' : 'Term'}
+                <span className="mobile-add-count">{count}/10</span>
+              </button>
+            )}
+          </section>
+
+          {/* Quick links strip */}
+          <section className="mobile-quick-links">
+            <a href="https://usafs-tracker.vercel.app/" target="_blank" rel="noopener noreferrer"
+               className="quick-link-card" id="mobile-link-exams">
+              <div className="quick-link-icon"><Calendar size={18} strokeWidth={1.5} /></div>
+              <div className="quick-link-content">
+                <span className="quick-link-title">Exams Tracker</span>
+                <span className="quick-link-sub">Track midterms & finals</span>
+              </div>
+              <ArrowRight size={14} className="quick-link-arrow" />
+            </a>
+            <a href="https://habit-tracker-nine-mu.vercel.app/" target="_blank" rel="noopener noreferrer"
+               className="quick-link-card" id="mobile-link-habits">
+              <div className="quick-link-icon"><Activity size={18} strokeWidth={1.5} /></div>
+              <div className="quick-link-content">
+                <span className="quick-link-title">Habits Tracker</span>
+                <span className="quick-link-sub">Optimize your routine</span>
+              </div>
+              <ArrowRight size={14} className="quick-link-arrow" />
+            </a>
+          </section>
+
+          {/* Bottom padding so FAB doesn't cover content */}
+          <div style={{ height: '140px' }} />
+        </main>
+
+        {/* Bottom nav bar (tab switcher) */}
+        <nav className="mobile-bottom-nav" aria-label="Calculator mode">
+          <button
+            className={`mobile-nav-btn ${isGpa ? 'active' : ''}`}
+            id="mobile-tab-gpa"
+            onClick={() => setActiveTab('gpa')}
+            aria-selected={isGpa}
+          >
+            <BookOpen size={18} />
+            <span>Semester</span>
+          </button>
+
+          {/* Center FAB: Calculate */}
+          <button
+            className="mobile-nav-fab"
+            id="mobile-btn-calculate"
+            onClick={() => { setShowResult(true); showToast('Calculation complete'); }}
+            aria-label="Calculate GPA"
+          >
+            <TrendingUp size={20} />
+          </button>
+
+          <button
+            className={`mobile-nav-btn ${!isGpa ? 'active' : ''}`}
+            id="mobile-tab-cgpa"
+            onClick={() => setActiveTab('cgpa')}
+            aria-selected={!isGpa}
+          >
+            <GraduationCap size={18} />
+            <span>Cumulative</span>
+          </button>
+        </nav>
+      </div>
+    </>
   );
 }
