@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.vercel.umt_gpa_cgpa_calculator.twa",
+      "sha256_cert_fingerprints": [
+        "4B:8F:41:34:43:64:83:C4:DF:04:DF:87:B1:31:37:D9:4B:A6:5F:B3:9A:C0:9B:79:EC:5A:7B:A5:4A:07:0D:0F"
+      ]
+    }
+  }
+]
